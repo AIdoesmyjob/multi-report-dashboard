@@ -58,6 +58,18 @@ try:
     # --- End Debugging ---
     logging.info("Authentication configuration loaded from Streamlit secrets.")
 
+    # --- Debugging: Log individual cookie components ---
+    try:
+        cookie_name = config['cookie']['name']
+        cookie_key = config['cookie']['key']
+        cookie_expiry = config['cookie']['expiry_days']
+        logging.info(f"DEBUG: Cookie Name: {cookie_name}, Key: {cookie_key}, Expiry: {cookie_expiry}")
+    except KeyError as ke:
+        logging.error(f"DEBUG: KeyError accessing cookie component: {ke}")
+    except Exception as e:
+        logging.error(f"DEBUG: Error accessing cookie component: {e}")
+    # --- End Debugging ---
+
     # Removed cookie key validation to simplify debugging startup issues
     # if not all(k in config['cookie'] for k in ['name', 'key', 'expiry_days']):
     #      st.error("Cookie configuration incomplete in Streamlit secrets (missing name, key, or expiry_days).")

@@ -39,20 +39,38 @@ if project_root not in sys.path:
 # --- Set Page Config FIRST --- # <-- Moved Up
 st.set_page_config(layout="wide")
 
-# --- Authentication Setup --- # <-- Added Block
-config_path = os.path.join(script_dir, 'config.yaml')
+# --- Authentication Setup --- #
+# Load configuration directly from Streamlit secrets instead of config.yaml
 try:
-    with open(config_path) as file:
-        config = yaml.load(file, Loader=SafeLoader)
-except FileNotFoundError:
-    st.error("Authentication configuration file (config.yaml) not found.")
-    logging.error("config.yaml not found.")
-    st.stop()
+    # Check if essential keys exist in secrets
+    if "credentials" not in st.secrets or "cookie" not in st.secrets:
+        st.error("Authentication configuration missing in Streamlit secrets.")
+        logging.error("Required 'credentials' or 'cookie' section not found in st.secrets.")
+        st.stop()
+
+    # Construct the config dictionary from secrets
+    config = {
+        'credentials': st.secrets['credentials'].to_dict(), # Convert secrets subsection to dict
+        'cookie': st.secrets['cookie'].to_dict()          # Convert secrets subsection to dict
+    }
+    logging.info("Authentication configuration loaded from Streamlit secrets.")
+
+    # Validate essential sub-keys (optional but recommended)
+    if not all(k in config['cookie'] for k in ['name', 'key', 'expiry_days']):
+         st.error("Cookie configuration incomplete in Streamlit secrets (missing name, key, or expiry_days).")
+         logging.error("Cookie configuration incomplete in st.secrets.")
+         st.stop()
+    if not config['credentials'].get('usernames'):
+         st.error("Usernames configuration missing in Streamlit secrets.")
+         logging.error("Usernames configuration missing in st.secrets.")
+         st.stop()
+
 except Exception as e:
-    st.error(f"Error loading authentication configuration: {e}")
-    logging.exception("Error loading config.yaml:")
+    st.error(f"Error loading authentication configuration from Streamlit secrets: {e}")
+    logging.exception("Error loading authentication configuration from st.secrets:")
     st.stop()
 
+# Initialize the authenticator with the config derived from secrets
 authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],

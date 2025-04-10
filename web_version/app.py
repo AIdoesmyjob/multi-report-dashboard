@@ -66,10 +66,7 @@ try:
          st.error("Cookie configuration incomplete in Streamlit secrets (missing name, key, or expiry_days).")
          logging.error("Cookie configuration incomplete in st.secrets.")
          st.stop()
-    if not config['credentials'].get('usernames'):
-         st.error("Usernames configuration missing in Streamlit secrets.")
-         logging.error("Usernames configuration missing in st.secrets.")
-         st.stop()
+    # Removed redundant check for config['credentials']['usernames'] as it's explicitly constructed above
 
 except Exception as e:
     st.error(f"Error loading authentication configuration from Streamlit secrets: {e}")

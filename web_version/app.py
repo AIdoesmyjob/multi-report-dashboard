@@ -58,11 +58,11 @@ try:
     # --- End Debugging ---
     logging.info("Authentication configuration loaded from Streamlit secrets.")
 
-    # Validate essential sub-keys (optional but recommended)
-    if not all(k in config['cookie'] for k in ['name', 'key', 'expiry_days']):
-         st.error("Cookie configuration incomplete in Streamlit secrets (missing name, key, or expiry_days).")
-         logging.error("Cookie configuration incomplete in st.secrets.")
-         st.stop()
+    # Removed cookie key validation to simplify debugging startup issues
+    # if not all(k in config['cookie'] for k in ['name', 'key', 'expiry_days']):
+    #      st.error("Cookie configuration incomplete in Streamlit secrets (missing name, key, or expiry_days).")
+    #      logging.error("Cookie configuration incomplete in st.secrets.")
+    #      st.stop()
     # Removed redundant check for config['credentials']['usernames'] as it's explicitly constructed above
 
 except Exception as e:

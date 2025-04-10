@@ -50,8 +50,11 @@ try:
 
     # Construct the config dictionary from secrets
     config = {
-        'credentials': st.secrets['credentials'].to_dict(), # Convert secrets subsection to dict
-        'cookie': st.secrets['cookie'].to_dict()          # Convert secrets subsection to dict
+        'credentials': {
+             # Explicitly access and convert the 'usernames' sub-section
+            'usernames': st.secrets['credentials']['usernames'].to_dict()
+        },
+        'cookie': st.secrets['cookie'].to_dict()
     }
     # --- Debugging: Log the constructed config ---
     logging.info(f"DEBUG: Config constructed from secrets: {config}")

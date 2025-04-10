@@ -40,63 +40,49 @@ if project_root not in sys.path:
 st.set_page_config(layout="wide")
 
 # --- Authentication Setup --- #
-# TEMPORARILY COMMENTED OUT FOR DEBUGGING STARTUP ISSUES
 # Load configuration directly from Streamlit secrets instead of config.yaml
-# try:
-#     # Check if essential keys exist in secrets
-#     if "credentials" not in st.secrets or "cookie" not in st.secrets:
-#         st.error("Authentication configuration missing in Streamlit secrets.")
-#         logging.error("Required 'credentials' or 'cookie' section not found in st.secrets.")
-#         st.stop()
-#
-#     # Construct the config dictionary from secrets
-#     config = {
-#         'credentials': st.secrets['credentials'].to_dict(), # Convert secrets subsection to dict
-#         'cookie': st.secrets['cookie'].to_dict()          # Convert secrets subsection to dict
-#     }
-#     # --- Debugging: Log the constructed config ---
-#     logging.info(f"DEBUG: Config constructed from secrets: {config}")
-#     # --- End Debugging ---
-#     logging.info("Authentication configuration loaded from Streamlit secrets.")
-#
-#     # --- Debugging: Log individual cookie components ---
-#     try:
-#         cookie_name = config['cookie']['name']
-#         cookie_key = config['cookie']['key']
-#         cookie_expiry = config['cookie']['expiry_days']
-#         logging.info(f"DEBUG: Cookie Name: {cookie_name}, Key: {cookie_key}, Expiry: {cookie_expiry}")
-#     except KeyError as ke:
-#         logging.error(f"DEBUG: KeyError accessing cookie component: {ke}")
-#     except Exception as e:
-#         logging.error(f"DEBUG: Error accessing cookie component: {e}")
-#     # --- End Debugging ---
-#
-#     # Removed cookie key validation to simplify debugging startup issues
-#     # if not all(k in config['cookie'] for k in ['name', 'key', 'expiry_days']):
-#     #      st.error("Cookie configuration incomplete in Streamlit secrets (missing name, key, or expiry_days).")
-#     #      logging.error("Cookie configuration incomplete in st.secrets.")
-#     #      st.stop()
-#     # Removed redundant check for config['credentials']['usernames'] as it's explicitly constructed above
-#
-# except Exception as e:
-#     st.error(f"Error loading authentication configuration from Streamlit secrets: {e}")
-#     logging.exception("Error loading authentication configuration from st.secrets:")
-#     st.stop()
-#
-# # Initialize the authenticator with the config derived from secrets
-# authenticator = stauth.Authenticate(
-#     config['credentials'],
-#     config['cookie']['name'],
-#     config['cookie']['key'],
-#     config['cookie']['expiry_days']
-#     # config['preauthorized'] # Removed deprecated parameter
-# )
-# END OF TEMPORARY COMMENT OUT
+try:
+    # Check if essential keys exist in secrets
+    if "credentials" not in st.secrets or "cookie" not in st.secrets:
+        st.error("Authentication configuration missing in Streamlit secrets.")
+        logging.error("Required 'credentials' or 'cookie' section not found in st.secrets.")
+        st.stop()
 
-# Initialize variables (Set defaults when auth is disabled)
-name = "DebugUser" # Default name
-authentication_status = True # Assume authenticated for debugging
-username = "debug_user" # Default username
+    # Construct the config dictionary from secrets
+    config = {
+        'credentials': st.secrets['credentials'].to_dict(), # Convert secrets subsection to dict
+        'cookie': st.secrets['cookie'].to_dict()          # Convert secrets subsection to dict
+    }
+    # --- Debugging: Log the constructed config ---
+    logging.info(f"DEBUG: Config constructed from secrets: {config}")
+    # --- End Debugging ---
+    logging.info("Authentication configuration loaded from Streamlit secrets.")
+
+    # Removed cookie key validation to simplify debugging startup issues
+    # if not all(k in config['cookie'] for k in ['name', 'key', 'expiry_days']):
+    #      st.error("Cookie configuration incomplete in Streamlit secrets (missing name, key, or expiry_days).")
+    #      logging.error("Cookie configuration incomplete in st.secrets.")
+    #      st.stop()
+    # Removed redundant check for config['credentials']['usernames'] as it's explicitly constructed above
+
+except Exception as e:
+    st.error(f"Error loading authentication configuration from Streamlit secrets: {e}")
+    logging.exception("Error loading authentication configuration from st.secrets:")
+    st.stop()
+
+# Initialize the authenticator with the config derived from secrets
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+    # config['preauthorized'] # Removed deprecated parameter
+)
+
+# Initialize variables
+name = None
+authentication_status = None
+username = None
 
 # --- Main Application Logic AND Login --- #
 # Check cookie/session first for existing authentication
@@ -110,21 +96,21 @@ username = "debug_user" # Default username
 # Using defensive check again as direct unpacking fails consistently
 # Explicitly setting location back to 'main'
 # Call login() to render the widget. Status is checked via session_state below.
-# authenticator.login(location='main') # Temporarily disabled
+authenticator.login(location='main')
 
 # Check authentication status from session_state (pattern for v0.4.x)
-# authentication_status = st.session_state.get("authentication_status") # Temporarily disabled
-# name = st.session_state.get("name") # Temporarily disabled
-# username = st.session_state.get("username") # Temporarily disabled
+authentication_status = st.session_state.get("authentication_status")
+name = st.session_state.get("name")
+username = st.session_state.get("username")
 
 # --- Streamlit App UI ---
 # Display title only *after* successful login
-if authentication_status: # Will be True due to default above
+if authentication_status:
     st.title("Multi-Report Dashboard") # Moved title here
     # --- Sidebar ---
     # Logout button now uses location='sidebar' directly if needed, or default
-    # authenticator.logout('Logout', location='sidebar') # Temporarily disabled
-    st.sidebar.write(f'Welcome *{name}*') # Uses default name
+    authenticator.logout('Logout', location='sidebar')
+    st.sidebar.write(f'Welcome *{name}*')
     st.sidebar.divider() # Add a visual separator
 
     # Sidebar: Date Inputs
@@ -214,16 +200,15 @@ if authentication_status: # Will be True due to default above
         st.info("Please select a report from the sidebar.")
         logging.info("No report selected.") # <-- Added logging
 
-# Temporarily disabled login failure/None status blocks
-# elif authentication_status is False:
-#     st.error('Username/password is incorrect')
-#     # Use the username from session_state if available for logging
-#     log_username = st.session_state.get("username", "N/A")
-#     logging.warning(f"Failed login attempt for username: {log_username}")
-#
-# elif authentication_status is None:
-#     # The login() call above should render the form fields in the 'main' location.
-#     # This block handles the initial state where status is None.
-#     # Optionally add a placeholder or message if needed, but login() handles the form.
-#     # st.info("Please log in using the form above.") # Example placeholder
-#     pass
+elif authentication_status is False:
+    st.error('Username/password is incorrect')
+    # Use the username from session_state if available for logging
+    log_username = st.session_state.get("username", "N/A")
+    logging.warning(f"Failed login attempt for username: {log_username}")
+
+elif authentication_status is None:
+    # The login() call above should render the form fields in the 'main' location.
+    # This block handles the initial state where status is None.
+    # Optionally add a placeholder or message if needed, but login() handles the form.
+    # st.info("Please log in using the form above.") # Example placeholder
+    pass

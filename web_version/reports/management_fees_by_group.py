@@ -14,6 +14,7 @@ from web_version.utils import get_engine
 logger = logging.getLogger(__name__)
 
 # GL account names considered part of management fees.
+# --- Restored full list - User needs to confirm which are INCOME accounts ---
 FEE_ACCOUNT_NAMES = {
     "Management Fee - 020",
     "Management Fee - 030",
@@ -22,10 +23,10 @@ FEE_ACCOUNT_NAMES = {
     "Management Fee - Sutton 2022",
     "Management Fees - Abbotsford",
     "Management Fees - Chilliwack",
-    # Newly added:
     "Inspection - Income",
     "Lease Up Fee",
 }
+# logger.info(f"Using FEE_ACCOUNT_NAMES: {FEE_ACCOUNT_NAMES}") # Keep commented unless debugging
 
 # Cache the data result; the returned DataFrame is pickleable.
 @st.cache_data(ttl=600)
@@ -63,9 +64,10 @@ def load_data(): # Removed start_date, end_date parameters
         LEFT JOIN property_groups pg ON pgm.property_group_id = pg.id
         WHERE glt.transaction_date >= :start_date
           AND glt.transaction_date <= :end_date
-          AND glt.unit_id IS NOT NULL -- Only include transactions linked to a unit
+          -- AND glt.unit_id IS NOT NULL -- Removed filter to include transactions without unit_id
         ORDER BY glt.id;
     """)
+    logger.warning("Running query without unit_id filter to include all relevant fee transactions.") # Add warning log
     try:
         with engine.connect() as conn:
             # Use calculated dates for PREVIOUS month in params

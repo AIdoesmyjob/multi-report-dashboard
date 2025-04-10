@@ -35,7 +35,7 @@ def load_data(): # Removed start_date, end_date parameters
     matching FEE_ACCOUNT_NAMES, extracts property_id, and groups the amounts by property.
 
     Returns a DataFrame with columns:
-       [year_month, property_id, total_fees, year_month_dt]
+       [year_month, group_name, total_fees, year_month_dt]
     """
     # --- Calculate start and end of CURRENT month ---
     today = datetime.today().date()
@@ -48,44 +48,40 @@ def load_data(): # Removed start_date, end_date parameters
         logger.error("Failed to get DB engine for management fees by group.")
         return pd.DataFrame()
 
-    # --- MODIFIED QUERY: Added property_id ---
-    # Assuming 'property_id' exists directly on the transactions table.
-    # If not, a JOIN would be needed here.
-    # --- FIXED: Removed extra line before SELECT ---
+    # --- FIXED QUERY: Join GL Transactions -> Units -> Properties -> Groups ---
     query = text("""
         SELECT
-            id,
-            transaction_date,
-            transaction_type,
-            total_amount,
-            journal,
-            property_id -- Added property_id
-        FROM general_ledger_transactions
-        WHERE transaction_date >= :start_date -- Use calculated start date
-          AND transaction_date <= :end_date -- Use calculated end date
-          AND property_id IS NOT NULL -- Exclude transactions without a property
-        ORDER BY id
+            glt.id,
+            glt.transaction_date,
+            glt.journal,
+            glt.unit_id, -- Keep unit_id for reference if needed
+            COALESCE(pg.name, 'No Group Assigned') AS group_name -- Get group name directly
+        FROM general_ledger_transactions glt
+        LEFT JOIN rental_units ru ON glt.unit_id = ru.id
+        LEFT JOIN rental_properties rp ON ru.property_id = rp.id
+        LEFT JOIN property_group_memberships pgm ON rp.id = pgm.property_id
+        LEFT JOIN property_groups pg ON pgm.property_group_id = pg.id
+        WHERE glt.transaction_date >= :start_date
+          AND glt.transaction_date <= :end_date
+          AND glt.unit_id IS NOT NULL -- Only include transactions linked to a unit
+        ORDER BY glt.id;
     """)
     try:
         with engine.connect() as conn:
             # Use calculated dates in params
             df = pd.read_sql_query(query, conn, params={"start_date": start_of_month, "end_date": end_of_month})
-        logger.info(f"Retrieved {df.shape[0]} GL transactions with property_id from the database for the current month.")
+        logger.info(f"Retrieved {df.shape[0]} GL transactions with unit_id and joined group_name from the database for the current month.")
     except Exception as e:
-         # Check if the error is due to the missing 'property_id' column
-         if "column \"property_id\" does not exist" in str(e).lower():
-             logger.error("The 'property_id' column was not found in 'general_ledger_transactions'. Cannot group by property.")
-             st.error("Database Error: The required 'property_id' column is missing from the transactions table. This report cannot be generated.")
-             # Return an empty DataFrame with expected columns for graceful failure downstream
-             return pd.DataFrame(columns=['year_month', 'property_id', 'total_fees', 'year_month_dt'])
-         else:
-            logger.exception("Failed to load GL transactions.")
-            st.error(f"DB Error loading GL transactions: {e}")
-            return pd.DataFrame(columns=['year_month', 'property_id', 'total_fees', 'year_month_dt'])
-
+        # No longer need to check for property_id error specifically
+        logger.exception("Failed to load GL transactions with joins.")
+        st.error(f"DB Error loading GL transactions: {e}")
+        # Return empty df with expected columns for downstream processing
+        return pd.DataFrame(columns=['year_month', 'group_name', 'total_fees', 'year_month_dt'])
 
     # Convert transaction_date to datetime.
     df["transaction_date"] = pd.to_datetime(df["transaction_date"], errors="coerce")
+    # Ensure group_name is filled for any potential missed joins (though COALESCE should handle it)
+    df['group_name'] = df['group_name'].fillna('Unknown Group')
 
     fee_entries = []
     json_parse_errors = 0
@@ -138,13 +134,13 @@ def load_data(): # Removed start_date, end_date parameters
                      logger.warning(f"Row {idx}, Txn ID {row['id']}: Error converting amount '{amount}' to numeric: {parse_e}. Skipping line.")
                      continue
 
-                # --- MODIFIED: Added property_id ---
+                # --- FIXED: Use group_name from the joined query ---
                 fee_entries.append({
                     "transaction_date": row["transaction_date"],
                     "account_name": account_name,
                     "amount": numeric_amount,
                     "transaction_id": row["id"],
-                    "property_id": row["property_id"] # Added property_id
+                    "group_name": row["group_name"] # Use group_name directly
                 })
                 # Don't break, multiple fee lines could exist in one transaction
 
@@ -154,74 +150,28 @@ def load_data(): # Removed start_date, end_date parameters
 
     if not fee_entries:
         logger.warning("No fee entries found after processing GL transactions.")
-        return pd.DataFrame(columns=['year_month', 'property_id', 'total_fees', 'year_month_dt']) # Return empty with expected columns
+        # Return empty df with expected columns
+        return pd.DataFrame(columns=['year_month', 'group_name', 'total_fees', 'year_month_dt'])
 
     fee_df = pd.DataFrame(fee_entries)
-    logger.info(f"Found {len(fee_df)} fee entries matching specified accounts with property IDs.")
+    logger.info(f"Found {len(fee_df)} fee entries matching specified accounts with group names.")
 
     # Create a 'year_month' column (e.g., '2023-05').
     fee_df["year_month"] = fee_df["transaction_date"].dt.to_period("M").astype(str)
 
-    # --- MODIFIED: Group by year_month AND property_id ---
-    monthly_sums = fee_df.groupby(["year_month", "property_id"])["amount"].sum().reset_index()
-    monthly_sums.rename(columns={"amount": "total_fees"}, inplace=True)
+    # --- FIXED: Group by year_month AND group_name ---
+    monthly_sums_group = fee_df.groupby(["year_month", "group_name"])["amount"].sum().reset_index()
+    monthly_sums_group.rename(columns={"amount": "total_fees"}, inplace=True)
 
     # Create a datetime column for plotting.
-    monthly_sums["year_month_dt"] = pd.to_datetime(monthly_sums["year_month"] + "-01", format="%Y-%m-%d")
-    monthly_sums.sort_values(["year_month_dt", "property_id"], inplace=True) # Sort by date then property
+    monthly_sums_group["year_month_dt"] = pd.to_datetime(monthly_sums_group["year_month"] + "-01", format="%Y-%m-%d")
+    monthly_sums_group.sort_values(["year_month_dt", "group_name"], inplace=True) # Sort by date then group
 
-    logger.info(f"Finished processing management fee data by property, shape: {monthly_sums.shape}")
-    return monthly_sums
+    logger.info(f"Finished processing management fee data by group, shape: {monthly_sums_group.shape}")
+    return monthly_sums_group
 
 
-@st.cache_data(ttl=600)
-def load_property_groups():
-    """
-    Loads property and property group data to map property_id to group name.
-
-    Returns a DataFrame with columns: [property_id, property_name, group_name]
-    """
-    logger.info("Loading property group mapping data.")
-    engine = get_engine()
-    if engine is None:
-        logger.error("Failed to get DB engine for property groups.")
-        return pd.DataFrame()
-
-    # --- FIXED QUERY: Use correct table names and join logic ---
-    # Uses rental_properties, property_groups, and property_group_memberships
-    query = text("""
-        SELECT DISTINCT -- Use DISTINCT in case a property is in multiple groups (though fees are per property)
-            rp.id AS property_id,
-            rp.name AS property_name,
-            -- pg.id AS group_id, -- Not strictly needed for this report's purpose
-            COALESCE(pg.name, 'No Group Assigned') AS group_name -- Handle properties not in any group
-        FROM
-            rental_properties rp
-        LEFT JOIN
-            property_group_memberships pgm ON rp.id = pgm.property_id
-        LEFT JOIN
-            property_groups pg ON pgm.property_group_id = pg.id
-        -- WHERE rp.is_active = true -- Optional: Filter for only active properties if needed
-        ORDER BY
-            rp.id;
-    """)
-    try:
-        with engine.connect() as conn:
-            prop_df = pd.read_sql_query(query, conn)
-        logger.info(f"Retrieved {prop_df.shape[0]} properties with group info using correct tables.")
-        # The COALESCE in the query handles the 'No Group Assigned' case directly.
-        # Ensure the columns exist before returning
-        if 'property_id' not in prop_df.columns or 'property_name' not in prop_df.columns or 'group_name' not in prop_df.columns:
-             logger.error("Query for property groups did not return expected columns.")
-             st.error("DB Error: Failed to retrieve property group mapping correctly.")
-             return pd.DataFrame(columns=['property_id', 'property_name', 'group_name'])
-
-        return prop_df[['property_id', 'property_name', 'group_name']]
-    except Exception as e:
-        logger.exception("Failed to load property/group data using correct tables.")
-        st.error(f"DB Error loading property/group data: {e}")
-        # Return empty with expected columns for graceful failure
-        return pd.DataFrame(columns=['property_id', 'property_name', 'group_name'])
+# --- REMOVED load_property_groups function ---
 
 
 def main(start_date, end_date): # Keep parameters for compatibility with app.py call signature
@@ -230,36 +180,20 @@ def main(start_date, end_date): # Keep parameters for compatibility with app.py 
     current_month_str = today.strftime("%B %Y")
     logger.info(f"Running Management Fees by Property Group report for CURRENT MONTH ({current_month_str})")
 
-    # Load fee data (now ignores start/end date parameters) and property group mapping
-    monthly_sums_prop = load_data()
-    prop_groups = load_property_groups()
+    # --- FIXED: Load data directly grouped by month/group ---
+    monthly_sums_group = load_data() # Now returns data already grouped
 
-    if monthly_sums_prop.empty:
-        st.warning(f"No relevant fee entries with property IDs found for the current month ({current_month_str}).")
-        logger.warning("No management fee data by property loaded or processed for the current month.")
-        return
-    if prop_groups.empty:
-        st.warning("Could not load property group information. Cannot group fees.")
-        logger.warning("Property group mapping failed to load.")
-        # Optionally display the data just by property ID if groups fail
-        # st.subheader("Data Table (by Property ID - Grouping Failed)")
-        # st.dataframe(monthly_sums_prop)
+    # --- REMOVED call to load_property_groups ---
+    # --- REMOVED merge operation ---
+
+    if monthly_sums_group.empty:
+        st.warning(f"No relevant fee entries found for the current month ({current_month_str}).")
+        logger.warning("No management fee data by group loaded or processed for the current month.")
         return
 
-    # Merge fee data with property group info
-    logger.info("Merging fee data with property group info...")
-    merged_df = pd.merge(monthly_sums_prop, prop_groups, on="property_id", how="left")
-    # Handle cases where a property_id from fees might not be in the properties table (unlikely but possible)
-    merged_df['group_name'] = merged_df['group_name'].fillna('Unknown Property/Group')
-    merged_df['property_name'] = merged_df['property_name'].fillna('Unknown Property')
+    # Data is already aggregated by group in monthly_sums_group
 
-
-    # --- MODIFIED: Aggregate by year_month AND group_name ---
-    logger.info("Aggregating fees by month and property group...")
-    monthly_sums_group = merged_df.groupby(["year_month_dt", "year_month", "group_name"])["total_fees"].sum().reset_index()
-    monthly_sums_group.sort_values(["year_month_dt", "group_name"], inplace=True)
-
-    # --- MODIFIED: Plotting - Stacked Bar Chart ---
+    # --- Plotting - Uses monthly_sums_group directly ---
     logger.info("Generating plot...")
     try:
         fig = go.Figure()

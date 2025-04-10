@@ -195,17 +195,34 @@ def main(start_date, end_date): # Keep parameters for compatibility with app.py 
         logger.warning(f"No management fee data by group loaded or processed for the previous month ({previous_month_str}).")
         return
 
-    # Data is already aggregated by group in monthly_sums_group
+    # --- Filter for specific management groups ---
+    target_groups = {
+        "Elena Morris (Management Group)",
+        "Jake Reimer (Management Group)",
+        "Matthew Stevenson ( Management Group )" # Note the potential extra space at the end
+    }
+    logger.info(f"Filtering report data for target groups: {target_groups}")
+    filtered_sums_group = monthly_sums_group[monthly_sums_group['group_name'].isin(target_groups)].copy()
 
-    # --- Plotting - Uses monthly_sums_group directly ---
-    logger.info("Generating plot...")
+    if filtered_sums_group.empty:
+        st.warning(f"No relevant fee entries found for the specified management groups in the previous month ({previous_month_str}).")
+        logger.warning(f"No data found after filtering for target groups: {target_groups}")
+        # Optionally, display the unfiltered table if no target groups found? Or just stop? Stopping for now.
+        return
+
+    # Data is now filtered and aggregated in filtered_sums_group
+
+    # --- Plotting - Uses filtered_sums_group ---
+    logger.info("Generating plot for filtered data...")
     try:
         fig = go.Figure()
-        groups = monthly_sums_group['group_name'].unique()
+        # Use filtered data for plotting
+        groups = filtered_sums_group['group_name'].unique()
 
         # Create a trace for each group
         for group in sorted(groups):
-            group_data = monthly_sums_group[monthly_sums_group['group_name'] == group]
+            # Use filtered data here
+            group_data = filtered_sums_group[filtered_sums_group['group_name'] == group]
             fig.add_trace(go.Bar(
                 x=group_data['year_month_dt'],
                 y=group_data['total_fees'],
@@ -245,8 +262,8 @@ def main(start_date, end_date): # Keep parameters for compatibility with app.py 
     try:
         # --- MODIFIED: Data Table - Simplified for single month ---
         st.subheader(f"Data Table (Previous Month: {previous_month_str})") # Update subheader
-        # Display simple table grouped by group name for the single month
-        display_df = monthly_sums_group[['group_name', 'total_fees']].copy()
+        # Use filtered data for table
+        display_df = filtered_sums_group[['group_name', 'total_fees']].copy()
         display_df.rename(columns={'group_name': 'Property Group', 'total_fees': 'Total Fees'}, inplace=True)
         display_df['Total Fees'] = display_df['Total Fees'].map('${:,.2f}'.format)
         st.dataframe(display_df.sort_values(by='Property Group'), hide_index=True)

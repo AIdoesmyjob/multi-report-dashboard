@@ -5,3 +5,4 @@ PyYAML
 python-dateutil
 psycopg2-binary
 SQLAlchemy>=1.4 # Add SQLAlchemy, using a common recent version range
+plotly>=5.0 # Add Plotly for visualizations

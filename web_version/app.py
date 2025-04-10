@@ -53,6 +53,9 @@ try:
         'credentials': st.secrets['credentials'].to_dict(), # Convert secrets subsection to dict
         'cookie': st.secrets['cookie'].to_dict()          # Convert secrets subsection to dict
     }
+    # --- Debugging: Log the constructed config ---
+    logging.info(f"DEBUG: Config constructed from secrets: {config}")
+    # --- End Debugging ---
     logging.info("Authentication configuration loaded from Streamlit secrets.")
 
     # Validate essential sub-keys (optional but recommended)

@@ -51,10 +51,8 @@ def load_data(): # Removed start_date, end_date parameters
     # --- MODIFIED QUERY: Added property_id ---
     # Assuming 'property_id' exists directly on the transactions table.
     # If not, a JOIN would be needed here.
+    # --- FIXED: Removed extra line before SELECT ---
     query = text("""
-            transaction_type,
-            total_amount,
-            journal,
         SELECT
             id,
             transaction_date,
@@ -189,28 +187,38 @@ def load_property_groups():
         logger.error("Failed to get DB engine for property groups.")
         return pd.DataFrame()
 
-    # --- NEW QUERY: Fetch property and group info ---
-    # Assuming 'properties' table has 'id', 'name', and 'property_group_id'
-    # Assuming 'property_groups' table has 'id' and 'name'
+    # --- FIXED QUERY: Use correct table names and join logic ---
+    # Uses rental_properties, property_groups, and property_group_memberships
     query = text("""
-        SELECT
-            p.id AS property_id,
-            p.name AS property_name,
-            pg.id AS group_id,
-            pg.name AS group_name
-        FROM properties p
-        LEFT JOIN property_groups pg ON p.property_group_id = pg.id
-        ORDER BY p.id;
+        SELECT DISTINCT -- Use DISTINCT in case a property is in multiple groups (though fees are per property)
+            rp.id AS property_id,
+            rp.name AS property_name,
+            -- pg.id AS group_id, -- Not strictly needed for this report's purpose
+            COALESCE(pg.name, 'No Group Assigned') AS group_name -- Handle properties not in any group
+        FROM
+            rental_properties rp
+        LEFT JOIN
+            property_group_memberships pgm ON rp.id = pgm.property_id
+        LEFT JOIN
+            property_groups pg ON pgm.property_group_id = pg.id
+        -- WHERE rp.is_active = true -- Optional: Filter for only active properties if needed
+        ORDER BY
+            rp.id;
     """)
     try:
         with engine.connect() as conn:
             prop_df = pd.read_sql_query(query, conn)
-        logger.info(f"Retrieved {prop_df.shape[0]} properties with group info.")
-        # Handle properties potentially without a group
-        prop_df['group_name'] = prop_df['group_name'].fillna('No Group Assigned')
+        logger.info(f"Retrieved {prop_df.shape[0]} properties with group info using correct tables.")
+        # The COALESCE in the query handles the 'No Group Assigned' case directly.
+        # Ensure the columns exist before returning
+        if 'property_id' not in prop_df.columns or 'property_name' not in prop_df.columns or 'group_name' not in prop_df.columns:
+             logger.error("Query for property groups did not return expected columns.")
+             st.error("DB Error: Failed to retrieve property group mapping correctly.")
+             return pd.DataFrame(columns=['property_id', 'property_name', 'group_name'])
+
         return prop_df[['property_id', 'property_name', 'group_name']]
     except Exception as e:
-        logger.exception("Failed to load property/group data.")
+        logger.exception("Failed to load property/group data using correct tables.")
         st.error(f"DB Error loading property/group data: {e}")
         # Return empty with expected columns for graceful failure
         return pd.DataFrame(columns=['property_id', 'property_name', 'group_name'])

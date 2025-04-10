@@ -200,25 +200,20 @@ def main(start_date, end_date): # Keep parameters for compatibility with app.py 
     # --- Plotting - Uses filtered_sums_group ---
     logger.info("Generating plot for filtered data...")
     try:
-        fig = go.Figure()
-        # Use filtered data for plotting
-        groups = filtered_sums_group['group_name'].unique()
-
-        # Create a trace for each group
-        for group in sorted(groups):
-            # Use filtered data here
-            group_data = filtered_sums_group[filtered_sums_group['group_name'] == group]
-            fig.add_trace(go.Bar(
-                x=group_data['year_month_dt'], # Should still be single month, but x-axis is categorical (group)
-                y=group_data['total_fees'],
-                name=group,
-                hovertemplate = f'<b>Group</b>: {group}<br><b>Month</b>: %{{x|%Y-%m}}<br><b>Fees</b>: $%{{y:,.2f}}<extra></extra>'
-            ))
+        # --- Create a grouped bar chart (Groups on X-axis) ---
+        fig = go.Figure(data=[
+            go.Bar(
+                x=filtered_sums_group['group_name'], # Groups on X-axis
+                y=filtered_sums_group['total_fees'], # Total fees on Y-axis
+                # name='Total Fees', # Not needed when only one trace per group
+                hovertemplate = '<b>Group</b>: %{x}<br><b>Fees</b>: $%{y:,.2f}<extra></extra>' # Updated hover
+            )
+        ])
 
         fig.update_layout(
-            barmode='stack', # Stack bars still make sense if multiple fee types were plotted per group, but here it's just total per group
-            title=f"Previous Month ({previous_month_str}) Management Fees by Property Group", # Updated title
-            xaxis_title="Property Group", # X-axis is group name for single month view
+            # barmode='group', # Not needed for single trace per x-category
+            title=f"Previous Month ({previous_month_str}) Management Fees by Property Group", # Keep title
+            xaxis_title="Property Group", # X-axis is group name
             yaxis_title="Total Fees ($)",
             legend_title="Property Group",
             hovermode="x unified" # Might be less useful for single-month bar chart

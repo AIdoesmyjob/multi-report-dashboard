@@ -37,12 +37,12 @@ def load_data(): # Removed start_date, end_date parameters
     Returns a DataFrame with columns:
        [year_month, group_name, total_fees, year_month_dt]
     """
-    # --- Calculate start and end of CURRENT month ---
+    # --- Calculate start and end of PREVIOUS month ---
     today = datetime.today().date()
-    start_of_month = today.replace(day=1)
-    # Add one month and subtract one day to get the last day of the current month
-    end_of_month = (start_of_month + relativedelta(months=1)) - relativedelta(days=1)
-    logger.info(f"Loading management fee data by property for the current month: {start_of_month} to {end_of_month}")
+    start_of_current_month = today.replace(day=1)
+    end_of_previous_month = start_of_current_month - relativedelta(days=1)
+    start_of_previous_month = end_of_previous_month.replace(day=1)
+    logger.info(f"Loading management fee data by property for the previous month: {start_of_previous_month} to {end_of_previous_month}")
     engine = get_engine()
     if engine is None:
         logger.error("Failed to get DB engine for management fees by group.")
@@ -68,9 +68,9 @@ def load_data(): # Removed start_date, end_date parameters
     """)
     try:
         with engine.connect() as conn:
-            # Use calculated dates in params
-            df = pd.read_sql_query(query, conn, params={"start_date": start_of_month, "end_date": end_of_month})
-        logger.info(f"Retrieved {df.shape[0]} GL transactions with unit_id and joined group_name from the database for the current month.")
+            # Use calculated dates for PREVIOUS month in params
+            df = pd.read_sql_query(query, conn, params={"start_date": start_of_previous_month, "end_date": end_of_previous_month})
+        logger.info(f"Retrieved {df.shape[0]} GL transactions with unit_id and joined group_name from the database for the previous month.")
     except Exception as e:
         # No longer need to check for property_id error specifically
         logger.exception("Failed to load GL transactions with joins.")
@@ -175,20 +175,22 @@ def load_data(): # Removed start_date, end_date parameters
 
 
 def main(start_date, end_date): # Keep parameters for compatibility with app.py call signature
-    # --- Calculate current month for display ---
+    # --- Calculate previous month for display ---
     today = datetime.today().date()
-    current_month_str = today.strftime("%B %Y")
-    logger.info(f"Running Management Fees by Property Group report for CURRENT MONTH ({current_month_str})")
+    start_of_current_month = today.replace(day=1)
+    end_of_previous_month = start_of_current_month - relativedelta(days=1)
+    previous_month_str = end_of_previous_month.strftime("%B %Y") # Format previous month
+    logger.info(f"Running Management Fees by Property Group report for PREVIOUS MONTH ({previous_month_str})")
 
     # --- FIXED: Load data directly grouped by month/group ---
-    monthly_sums_group = load_data() # Now returns data already grouped
+    monthly_sums_group = load_data() # Now returns data already grouped for previous month
 
     # --- REMOVED call to load_property_groups ---
     # --- REMOVED merge operation ---
 
     if monthly_sums_group.empty:
-        st.warning(f"No relevant fee entries found for the current month ({current_month_str}).")
-        logger.warning("No management fee data by group loaded or processed for the current month.")
+        st.warning(f"No relevant fee entries found for the previous month ({previous_month_str}).")
+        logger.warning(f"No management fee data by group loaded or processed for the previous month ({previous_month_str}).")
         return
 
     # Data is already aggregated by group in monthly_sums_group
@@ -211,8 +213,8 @@ def main(start_date, end_date): # Keep parameters for compatibility with app.py 
 
         fig.update_layout(
             barmode='stack', # Stack bars
-            title=f"Current Month ({current_month_str}) Management Fees by Property Group", # Updated title
-            xaxis_title="Property Group", # Changed X-axis title as we only have one month
+            title=f"Previous Month ({previous_month_str}) Management Fees by Property Group", # Updated title
+            xaxis_title="Property Group", # X-axis is group name for single month view
             yaxis_title="Total Fees ($)",
             legend_title="Property Group",
             hovermode="x unified"
@@ -224,10 +226,9 @@ def main(start_date, end_date): # Keep parameters for compatibility with app.py 
         # --- Add plain English description ---
         st.markdown(f"""
         **How this graph is created:**
-        *   This chart displays the total management-related fees collected **for the current calendar month ({current_month_str})**, broken down by the Property Group each property belongs to.
-        *   We identify relevant fees by looking at General Ledger transactions within this month that are posted to specific income accounts like 'Management Fee - *', 'Inspection - Income', and 'Lease Up Fee'.
-        *   Each fee transaction is linked to a specific property using the `property_id` recorded with the transaction.
-        *   We then look up which Property Group that property belongs to.
+        *   This chart displays the total management-related fees collected **for the previous calendar month ({previous_month_str})**, broken down by the Property Group each property belongs to.
+        *   We identify relevant fees by looking at General Ledger transactions within that month that are posted to specific income accounts like 'Management Fee - *', 'Inspection - Income', and 'Lease Up Fee'.
+        *   Each fee transaction is linked to a specific property via its associated Unit (`unit_id`). We then determine the Property Group for that property.
         *   Finally, we sum up all the identified fees for each Property Group to get the totals shown in the bars above.
         *   Fees from transactions that aren't linked to a property, or properties not assigned to a group, are categorized as 'Unknown' or 'No Group Assigned'.
         """)
@@ -238,10 +239,10 @@ def main(start_date, end_date): # Keep parameters for compatibility with app.py 
         st.error(f"Error generating plot: {e}")
 
     # --- MODIFIED: Data Table - Grouped ---
-    st.subheader("Data Table (Grouped by Month and Property Group)")
+    st.subheader("Data Table (Grouped by Month and Property Group)") # Keep this generic title
     try:
         # --- MODIFIED: Data Table - Simplified for single month ---
-        st.subheader(f"Data Table (Current Month: {current_month_str})")
+        st.subheader(f"Data Table (Previous Month: {previous_month_str})") # Update subheader
         # Display simple table grouped by group name for the single month
         display_df = monthly_sums_group[['group_name', 'total_fees']].copy()
         display_df.rename(columns={'group_name': 'Property Group', 'total_fees': 'Total Fees'}, inplace=True)

@@ -22,16 +22,8 @@ logging.basicConfig(
 )
 logging.info("Application started.") # <-- Added
 
-# --- Configuration and Initialization ---
-dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
-if os.path.exists(dotenv_path):
-    load_dotenv(dotenv_path)
-    logging.info(".env file loaded.") # <-- Added logging
-else:
-    st.warning("`.env` file not found. Reports needing DB access must handle credentials.")
-    logging.warning(".env file not found.") # <-- Added logging
-
 # --- Calculate Absolute Path for Reports Directory ---
+# .env loading removed; Streamlit secrets should be used directly.
 script_dir = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(script_dir, "reports")
 logging.info(f"Absolute reports directory path set to: {REPORTS_DIR}") # <-- Added logging

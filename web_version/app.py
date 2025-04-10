@@ -165,8 +165,20 @@ if authentication_status:
     # Correct indentation for this entire block
     if report_option: # Check if a report was successfully selected
         st.subheader(f"Displaying: {report_option}")
-        st.caption(f"Data Range: {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}")
-        logging.info(f"Attempting to run report: {report_option} for dates {start_date} to {end_date}") # <-- Added logging
+
+        # --- Conditionally display date range/period ---
+        if report_option == "Management Fees By Group":
+            # Calculate previous month string for this specific report
+            today = datetime.today().date()
+            start_of_current_month = today.replace(day=1)
+            end_of_previous_month = start_of_current_month - relativedelta(days=1)
+            previous_month_str = end_of_previous_month.strftime("%B %Y")
+            st.caption(f"Data Period: {previous_month_str} (Previous Full Month)")
+            logging.info(f"Attempting to run report: {report_option} for period {previous_month_str}")
+        else:
+            # Default behavior for other reports
+            st.caption(f"Data Range: {start_date.strftime('%B %d, %Y')} to {end_date.strftime('%B %d, %Y')}")
+            logging.info(f"Attempting to run report: {report_option} for dates {start_date} to {end_date}")
 
         # No engine created here anymore
 

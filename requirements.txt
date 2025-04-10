@@ -1,0 +1,6 @@
+streamlit>=1.44.1
+streamlit-authenticator>=0.4.2
+python-dotenv
+PyYAML
+python-dateutil
+psycopg2-binary
